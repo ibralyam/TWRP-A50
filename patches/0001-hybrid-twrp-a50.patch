@@ -2,7 +2,7 @@ diff --git a/BoardConfig.mk b/BoardConfig.mk
 index 16f9a21..a8a59f5 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -56,7 +56,9 @@ BOARD_FLASH_BLOCK_SIZE := 262144
+@@ -56,7 +56,11 @@ BOARD_FLASH_BLOCK_SIZE := 262144
  BOARD_BOOTIMAGE_PARTITION_SIZE := 57671680
  BOARD_DTBOIMG_PARTITION_SIZE := 8388608
  BOARD_DTBIMG_PARTITION_SIZE := 8388608
@@ -10,6 +10,8 @@ index 16f9a21..a8a59f5 100644
 +# Hybrid: the recovery partition is 64 MB (TWRP log: /recovery Size: 64MB).
 +# The build fails if recovery.img is bigger than this.
 +BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864
++# Shown on the boot splash and the home screen as <main version>-<this value>.
++TW_DEVICE_VERSION := 0-UNOFFICIAL-@ibralyam
  
  TARGET_USERIMAGES_USE_EXT4 := true
  TARGET_USERIMAGES_USE_F2FS := true
