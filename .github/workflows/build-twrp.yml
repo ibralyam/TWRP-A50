@@ -150,6 +150,7 @@ jobs:
           echo "--- props"
           grep -H -E '^ro.product.device=|^ro.build.product=|ro.ibralyam.twrp.hybrid' "$R/prop.default" "$R/default.prop" || echo "::warning::props not in prop.default or default.prop"
           ( cd "$R" && find . | sort ) > "$RUNNER_TEMP/ramdisk-files.txt"
+          if grep -aq "0-UNOFFICIAL-@ibralyam" "$R/system/bin/recovery"; then echo "ok   version string in recovery binary"; else echo "::error::version string missing in recovery binary"; FAIL=1; fi
           [ "$FAIL" = 0 ]
 
       - name: Compress, build the flasher and pack the zip
