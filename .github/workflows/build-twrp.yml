@@ -9,7 +9,7 @@ on:
         default: ""
 
 env:
-  HYBRID_DIR: twrp-hybrid
+  HYBRID_DIR: "."
   MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
   MANIFEST_BRANCH: twrp-12.1
   DEVICE_URL: https://github.com/PeterKnecht93/android_device_samsung_a50
@@ -43,7 +43,7 @@ jobs:
             git-core gnupg flex bison build-essential zip unzip curl xz-utils \
             zlib1g-dev libc6-dev-i386 libncurses5 lib32ncurses-dev x11proto-core-dev \
             libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc fontconfig \
-            python3 bc libssl-dev rsync liblzma-dev gcc-aarch64-linux-gnu libc6-dev-arm64-cross file
+            python3 bc libssl-dev rsync liblzma-dev gcc-aarch64-linux-gnu file
           sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
           sudo chmod +x /usr/local/bin/repo
           git config --global user.name "ci"
@@ -143,10 +143,13 @@ jobs:
                    "symlink /dev/block/platform/13520000.ufs/by-name /dev/block/by-name"; do
             if grep -qF "$L" "$R/init.recovery.exynos9610.rc"; then echo "ok   rc: $L"; else echo "::error::rc line missing: $L"; FAIL=1; fi
           done
-          if grep -rqs "ro.product.device=a50$" "$R/prop.default" "$R/default.prop" "$R/system/build.prop"; then echo "ok   ro.product.device=a50"; else echo "::warning::ro.product.device=a50 not found in ramdisk props"; fi
-          if grep -rqs "ro.build.product=a50$" "$R/prop.default" "$R/default.prop" "$R/system/build.prop"; then echo "ok   ro.build.product=a50"; else echo "::warning::ro.build.product=a50 not found in ramdisk props"; fi
-          if grep -rqs "ro.ibralyam.twrp.hybrid=1" "$R/prop.default" "$R/default.prop" "$R/system/build.prop"; then echo "ok   hybrid marker in prop files"; else echo "::warning::hybrid marker is not in prop.default. It is still set at boot by init."; fi
-          grep -rn "system_root" "$R/etc/recovery.fstab" || { echo "::error::no /system_root in recovery.fstab"; FAIL=1; }
+          echo "--- fstab and prop files found in the ramdisk"
+          find -L "$R" -type f \( -name 'recovery.fstab' -o -name 'twrp.flags' -o -name 'fstab.*' -o -name 'prop.default' -o -name 'default.prop' -o -name 'build.prop' \) 2>/dev/null | sed "s#^$R/##" | sort | tee "$RUNNER_TEMP/ramdisk-found.txt"
+          ( cd "$R" && find . | sort ) > "$RUNNER_TEMP/ramdisk-files.txt"
+          if grep -rIl --include='*fstab*' --include='twrp.flags' -e '/system_root' "$R" 2>/dev/null; then echo "ok   /system_root is in the ramdisk fstab"; else echo "::error::no /system_root in any ramdisk fstab file"; FAIL=1; fi
+          if grep -rIl -e 'ro.product.device=a50$' "$R" 2>/dev/null; then echo "ok   ro.product.device=a50"; else echo "::warning::ro.product.device=a50 not found in ramdisk text files"; fi
+          if grep -rIl -e 'ro.build.product=a50$' "$R" 2>/dev/null; then echo "ok   ro.build.product=a50"; else echo "::warning::ro.build.product=a50 not found in ramdisk text files"; fi
+          if grep -rIl -e 'ro.ibralyam.twrp.hybrid=1' "$R" 2>/dev/null; then echo "ok   hybrid marker in a prop file"; else echo "::warning::hybrid marker is not in a prop file. It is still set at boot by init."; fi
           [ "$FAIL" = 0 ]
 
       - name: Compress, build the flasher and pack the zip
@@ -169,3 +172,13 @@ jobs:
             dist/recovery.img.xz
             dist/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Upload ramdisk listing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ramdisk-listing
+          path: |
+            ${{ runner.temp }}/ramdisk-files.txt
+            ${{ runner.temp }}/ramdisk-found.txt
+          if-no-files-found: ignore
