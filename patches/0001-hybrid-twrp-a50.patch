@@ -1,0 +1,72 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 16f9a21..a8a59f5 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -56,7 +56,9 @@ BOARD_FLASH_BLOCK_SIZE := 262144
+ BOARD_BOOTIMAGE_PARTITION_SIZE := 57671680
+ BOARD_DTBOIMG_PARTITION_SIZE := 8388608
+ BOARD_DTBIMG_PARTITION_SIZE := 8388608
+-BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67633152
++# Hybrid: the recovery partition is 64 MB (TWRP log: /recovery Size: 64MB).
++# The build fails if recovery.img is bigger than this.
++BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864
+ 
+ TARGET_USERIMAGES_USE_EXT4 := true
+ TARGET_USERIMAGES_USE_F2FS := true
+diff --git a/device.mk b/device.mk
+index ddd94e5..5ba6e55 100644
+--- a/device.mk
++++ b/device.mk
+@@ -25,3 +25,7 @@ PRODUCT_PRODUCT_PROPERTIES += \
+ # Screen
+ TARGET_SCREEN_WIDTH := 1080
+ TARGET_SCREEN_HEIGHT := 2340
++
++# Hybrid: marker for ibralyam hybrid TWRP (also set at runtime in init.recovery.exynos9610.rc)
++PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
++    ro.ibralyam.twrp.hybrid=1
+diff --git a/recovery.fstab b/recovery.fstab
+index 223d471..aaec552 100644
+--- a/recovery.fstab
++++ b/recovery.fstab
+@@ -6,3 +6,8 @@
+ /dev/block/platform/13520000.ufs/by-name/userdata   /data   ext4    noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    latemount,wait,check,reservedsize=128M
+ /dev/block/platform/13520000.ufs/by-name/userdata   /data   f2fs    noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    latemount,wait,check,reservedsize=128M
+ /dev/block/platform/13520000.ufs/by-name/misc       /misc   emmc    defaults                                                                                   defaults,first_stage_mount
++
++# Hybrid: legacy TWRP v3 mount point. Installers and AnyKernel3 look for /system_root.
++# Same block device as /system in twrp.flags, so no extra partition is created.
++/dev/block/platform/13520000.ufs/by-name/system     /system_root    ext4    ro,noatime                                                                                 wait
++/dev/block/platform/13520000.ufs/by-name/system     /system_root    erofs   ro                                                                                         wait
+diff --git a/recovery/root/init.recovery.exynos9610.rc b/recovery/root/init.recovery.exynos9610.rc
+index f9b1a8f..32daf01 100644
+--- a/recovery/root/init.recovery.exynos9610.rc
++++ b/recovery/root/init.recovery.exynos9610.rc
+@@ -1,5 +1,12 @@
++on early-init
++    setprop ro.ibralyam.twrp.hybrid 1
++    write /sys/fs/selinux/enforce 0
++
+ on init
+     write /proc/sys/kernel/hung_task_timeout_secs 0
++    symlink /system/bin/twrp_applet /system/bin/xzcat
++    symlink /system/bin/twrp_applet /system/bin/unxz
++    symlink /system/bin/twrp_applet /system/bin/busybox
+ 
+ on late-init
+     setprop service.adb.root 1
+@@ -10,6 +17,8 @@ on fs
+     wait /dev/block/platform/13520000.ufs
+     symlink /dev/block/platform/13520000.ufs /dev/block/bootdevice
+     symlink /dev/block/platform/13520000.ufs/by-name /dev/block/by-name
++    mkdir /sbin 0755 root root
++    symlink /system/bin/sh /sbin/sh
+     start hwservicemanager
+ 
+ service hwservicemanager /system/bin/hwservicemanager
+@@ -20,4 +29,5 @@ service hwservicemanager /system/bin/hwservicemanager
+     seclabel u:r:recovery:s0
+ 
+ on boot
++    mount tmpfs tmpfs /tmp remount rw
+     start health-hal-2-1
