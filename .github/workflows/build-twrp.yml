@@ -93,28 +93,15 @@ jobs:
           git -C "$DEVICE_DIR" log --oneline -1
           df -h /
 
-      - name: Apply hybrid modifications and add applet
+      - name: Apply hybrid patch and add applet
         run: |
-          cd "$HOME/twrp/$DEVICE_DIR"
-          
-          # 1. Update BoardConfig.mk size
-          sed -i 's/BOARD_RECOVERYIMAGE_PARTITION_SIZE := .*/BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864/' BoardConfig.mk || true
-          
-          # 2. Add hybrid property in device.mk
-          echo -e "\n# Hybrid: marker for ibralyam hybrid TWRP\nPRODUCT_SYSTEM_DEFAULT_PROPERTIES += \\\n    ro.ibralyam.twrp.hybrid=1" >> device.mk
-          
-          # 3. Inject system_root into recovery.fstab
-          echo -e "\n# Hybrid: legacy TWRP v3 mount point\n/dev/block/platform/13520000.ufs/by-name/system     /system_root    ext4    ro,noatime                                                                                 wait\n/dev/block/platform/13520000.ufs/by-name/system     /system_root    erofs   ro                                                                                         wait" >> recovery.fstab
-          
-          # 4. Inject init hooks into recovery/root/init.recovery.exynos9610.rc
-          RC_FILE="recovery/root/init.recovery.exynos9610.rc"
-          if [ -f "$RC_FILE" ]; then
-            sed -i 's/on early-init/on early-init\n    setprop ro.ibralyam.twrp.hybrid 1\n    write \/sys\/fs\/selinux\/enforce 0/' "$RC_FILE" || true
-            echo -e "\non init\n    symlink \/system\/bin\/twrp_applet \/system\/bin\/xzcat\n    symlink \/system\/bin\/twrp_applet \/system\/bin\/unxz\n    symlink \/system\/bin\/twrp_applet \/system\/bin\/busybox" >> "$RC_FILE"
-          fi
-
-          install -D -m 755 "$RUNNER_TEMP/twrp_applet" "recovery/root/system/bin/twrp_applet"
-          git status --short
+          cd "$HOME/twrp"
+          PATCH_PATH="$GITHUB_WORKSPACE/patches/0001-hybrid-twrp-a50.patch"
+          [ -f "$PATCH_PATH" ] || PATCH_PATH="$GITHUB_WORKSPACE/twrp-hybrid/patches/0001-hybrid-twrp-a50.patch"
+          git -C "$DEVICE_DIR" apply --check "$PATCH_PATH"
+          git -C "$DEVICE_DIR" apply "$PATCH_PATH"
+          install -D -m 755 "$RUNNER_TEMP/twrp_applet" "$DEVICE_DIR/recovery/root/system/bin/twrp_applet"
+          git -C "$DEVICE_DIR" status --short
 
       - name: Build recoveryimage (twrp_a50-eng)
         run: |
@@ -146,10 +133,23 @@ jobs:
           need system/bin/mke2fs
           need system/bin/blockdev
           need system/bin/toybox
-          echo "--- fstab and prop files found in the ramdisk"
-          find -L "$R" -type f \( -name 'recovery.fstab' -o -name 'twrp.flags' -o -name 'fstab.*' -o -name 'prop.default' -o -name 'default.prop' -o -name 'build.prop' \) 2>/dev/null | sed "s#^$R/##" | sort | tee "$RUNNER_TEMP/ramdisk-found.txt"
+          need init.recovery.exynos9610.rc
+          for L in "symlink /system/bin/twrp_applet /system/bin/xzcat" \
+                   "symlink /system/bin/twrp_applet /system/bin/unxz" \
+                   "symlink /system/bin/twrp_applet /system/bin/busybox" \
+                   "symlink /system/bin/sh /sbin/sh" \
+                   "mount tmpfs tmpfs /tmp remount rw" \
+                   "write /sys/fs/selinux/enforce 0" \
+                   "setprop ro.ibralyam.twrp.hybrid 1"; do
+            if grep -qF "$L" "$R/init.recovery.exynos9610.rc"; then echo "ok   rc: $L"; else echo "::error::rc line missing: $L"; FAIL=1; fi
+          done
+          F="$R/system/etc/recovery.fstab"
+          ls -l "$F" "$R/system/etc/twrp.flags" "$R/prop.default" "$R/default.prop" || true
+          echo "--- recovery.fstab"; cat "$F"
+          if grep -q '/system_root' "$F"; then echo "ok   /system_root in recovery.fstab"; else echo "::error::/system_root not in recovery.fstab"; FAIL=1; fi
+          echo "--- props"
+          grep -H -E '^ro.product.device=|^ro.build.product=|ro.ibralyam.twrp.hybrid' "$R/prop.default" "$R/default.prop" || echo "::warning::props not in prop.default or default.prop"
           ( cd "$R" && find . | sort ) > "$RUNNER_TEMP/ramdisk-files.txt"
-          if grep -rIl --include='*fstab*' --include='twrp.flags' -e '/system_root' "$R" 2>/dev/null; then echo "ok   /system_root is in the ramdisk fstab"; else echo "::error::no /system_root in any ramdisk fstab file"; FAIL=1; fi
           [ "$FAIL" = 0 ]
 
       - name: Compress, build the flasher and pack the zip
