@@ -1,184 +1,72 @@
-name: Build hybrid TWRP for Galaxy A50
-
-on:
-  workflow_dispatch:
-    inputs:
-      xz_sha256:
-        description: "SHA256 of xz-5.4.5.tar.xz (optional, empty = print only)"
-        required: false
-        default: ""
-
-env:
-  HYBRID_DIR: twrp-hybrid
-  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
-  MANIFEST_BRANCH: twrp-12.1
-  DEVICE_URL: https://github.com/PeterKnecht93/android_device_samsung_a50
-  DEVICE_BRANCH: twrp-12.1
-  DEVICE_DIR: device/samsung/a50
-  XZ_VER: 5.4.5
-  MAX_RAW: "67108864"
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-    defaults:
-      run:
-        shell: bash -eo pipefail {0}
-
-    steps:
-      - name: Checkout hybrid files
-        uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
-          df -h /
-
-      - name: Install packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            git-core gnupg flex bison build-essential zip unzip curl xz-utils \
-            zlib1g-dev libc6-dev-i386 libncurses5 lib32ncurses-dev x11proto-core-dev \
-            libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc fontconfig \
-            python3 bc libssl-dev rsync liblzma-dev gcc-aarch64-linux-gnu file
-          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
-          sudo chmod +x /usr/local/bin/repo
-          git config --global user.name "ci"
-          git config --global user.email "ci@users.noreply.github.com"
-
-      - name: Flasher self tests (x86 host)
-        run: |
-          bash "$HYBRID_DIR/tests/run_tests.sh"
-
-      - name: Build static liblzma for arm64
-        env:
-          XZ_SHA: ${{ inputs.xz_sha256 }}
-        run: |
-          cd "$RUNNER_TEMP"
-          curl -fsSL -o xz.tar.xz "https://github.com/tukaani-project/xz/releases/download/v${XZ_VER}/xz-${XZ_VER}.tar.xz"
-          sha256sum xz.tar.xz
-          if [ -n "$XZ_SHA" ]; then
-            echo "$XZ_SHA  xz.tar.xz" | sha256sum -c -
-          fi
-          tar xf xz.tar.xz
-          cd "xz-${XZ_VER}"
-          ./configure --host=aarch64-linux-gnu --prefix="$RUNNER_TEMP/xz-arm64" \
-            --disable-shared --enable-static --disable-xz --disable-xzdec \
-            --disable-lzmadec --disable-lzmainfo --disable-scripts --disable-doc \
-            --disable-nls --disable-threads CFLAGS="-O2"
-          make -j"$(nproc)"
-          make install
-          ls -l "$RUNNER_TEMP/xz-arm64/lib/liblzma.a"
-
-      - name: Build applet (xzcat, unxz, busybox) for the recovery ramdisk
-        run: |
-          aarch64-linux-gnu-gcc -static -O2 -s -fvisibility=hidden -Wall -Wextra \
-            -I"$RUNNER_TEMP/xz-arm64/include" \
-            -o "$RUNNER_TEMP/twrp_applet" \
-            "$HYBRID_DIR/flasher/twrp_flasher.c" "$RUNNER_TEMP/xz-arm64/lib/liblzma.a"
-          file "$RUNNER_TEMP/twrp_applet"
-          file "$RUNNER_TEMP/twrp_applet" | grep -q "ARM aarch64"
-          file "$RUNNER_TEMP/twrp_applet" | grep -q "statically linked"
-
-      - name: Sync twrp-12.1 sources
-        run: |
-          mkdir -p "$HOME/twrp"
-          cd "$HOME/twrp"
-          repo init --depth=1 -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH"
-          repo sync -c -j"$(nproc)" --force-sync --no-clone-bundle --no-tags
-          git clone --depth 1 -b "$DEVICE_BRANCH" "$DEVICE_URL" "$DEVICE_DIR"
-          git -C "$DEVICE_DIR" log --oneline -1
-          df -h /
-
-      - name: Apply hybrid patch and add applet
-        run: |
-          cd "$HOME/twrp"
-          git -C "$DEVICE_DIR" apply --check "$GITHUB_WORKSPACE/$HYBRID_DIR/patches/0001-hybrid-twrp-a50.patch"
-          git -C "$DEVICE_DIR" apply "$GITHUB_WORKSPACE/$HYBRID_DIR/patches/0001-hybrid-twrp-a50.patch"
-          install -D -m 755 "$RUNNER_TEMP/twrp_applet" "$DEVICE_DIR/recovery/root/system/bin/twrp_applet"
-          git -C "$DEVICE_DIR" status --short
-
-      - name: Build recoveryimage (twrp_a50-eng)
-        run: |
-          cd "$HOME/twrp"
-          export LC_ALL=C
-          export ALLOW_MISSING_DEPENDENCIES=true
-          set +u
-          source build/envsetup.sh
-          lunch twrp_a50-eng
-          mka recoveryimage -j"$(nproc)"
-          ls -l out/target/product/a50/recovery.img
-          grep -rn "TW_MAIN_VERSION_STR" bootable/recovery/variables.h | head -2 || true
-
-      - name: Size gate (64 MB)
-        run: |
-          IMG="$HOME/twrp/out/target/product/a50/recovery.img"
-          SZ=$(stat -c %s "$IMG")
-          echo "recovery.img = $SZ bytes, limit = $MAX_RAW"
-          if [ "$SZ" -gt "$MAX_RAW" ]; then
-            echo "::error::recovery.img is $SZ bytes. The limit is $MAX_RAW."
-            exit 1
-          fi
-
-      - name: Check the ramdisk content
-        run: |
-          R="$HOME/twrp/out/target/product/a50/recovery/root"
-          FAIL=0
-          need() { if [ -e "$R/$1" ] || [ -L "$R/$1" ]; then echo "ok   $1"; else echo "::error::missing in ramdisk: $1"; FAIL=1; fi; }
-          need system/bin/twrp_applet
-          need system/bin/mke2fs
-          need system/bin/blockdev
-          need system/bin/toybox
-          need init.recovery.exynos9610.rc
-          for L in "symlink /system/bin/twrp_applet /system/bin/xzcat" \
-                   "symlink /system/bin/twrp_applet /system/bin/unxz" \
-                   "symlink /system/bin/twrp_applet /system/bin/busybox" \
-                   "symlink /system/bin/sh /sbin/sh" \
-                   "mount tmpfs tmpfs /tmp remount rw" \
-                   "write /sys/fs/selinux/enforce 0" \
-                   "setprop ro.ibralyam.twrp.hybrid 1" \
-                   "symlink /dev/block/platform/13520000.ufs/by-name /dev/block/by-name"; do
-            if grep -qF "$L" "$R/init.recovery.exynos9610.rc"; then echo "ok   rc: $L"; else echo "::error::rc line missing: $L"; FAIL=1; fi
-          done
-          echo "--- fstab and prop files found in the ramdisk"
-          find -L "$R" -type f \( -name 'recovery.fstab' -o -name 'twrp.flags' -o -name 'fstab.*' -o -name 'prop.default' -o -name 'default.prop' -o -name 'build.prop' \) 2>/dev/null | sed "s#^$R/##" | sort | tee "$RUNNER_TEMP/ramdisk-found.txt"
-          ( cd "$R" && find . | sort ) > "$RUNNER_TEMP/ramdisk-files.txt"
-          if grep -rIl --include='*fstab*' --include='twrp.flags' -e '/system_root' "$R" 2>/dev/null; then echo "ok   /system_root is in the ramdisk fstab"; else echo "::error::no /system_root in any ramdisk fstab file"; FAIL=1; fi
-          if grep -rIl -e 'ro.product.device=a50$' "$R" 2>/dev/null; then echo "ok   ro.product.device=a50"; else echo "::warning::ro.product.device=a50 not found in ramdisk text files"; fi
-          if grep -rIl -e 'ro.build.product=a50$' "$R" 2>/dev/null; then echo "ok   ro.build.product=a50"; else echo "::warning::ro.build.product=a50 not found in ramdisk text files"; fi
-          if grep -rIl -e 'ro.ibralyam.twrp.hybrid=1' "$R" 2>/dev/null; then echo "ok   hybrid marker in a prop file"; else echo "::warning::hybrid marker is not in a prop file. It is still set at boot by init."; fi
-          [ "$FAIL" = 0 ]
-
-      - name: Compress, build the flasher and pack the zip
-        run: |
-          RECOVERY_IMG="$HOME/twrp/out/target/product/a50/recovery.img" \
-          CC=aarch64-linux-gnu-gcc \
-          LZMA_INC="$RUNNER_TEMP/xz-arm64/include" \
-          LZMA_A="$RUNNER_TEMP/xz-arm64/lib/liblzma.a" \
-          OUT_DIR="$GITHUB_WORKSPACE/dist" \
-          bash "$HYBRID_DIR/ci/pack.sh"
-          file "$GITHUB_WORKSPACE/dist/stage/META-INF/com/google/android/update-binary" | grep -q "ARM aarch64"
-          file "$GITHUB_WORKSPACE/dist/stage/META-INF/com/google/android/update-binary" | grep -q "statically linked"
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: twrp-hybrid-a50
-          path: |
-            dist/TWRP_hybrid_A50.zip
-            dist/recovery.img.xz
-            dist/SHA256SUMS.txt
-          if-no-files-found: error
-
-      - name: Upload ramdisk listing
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ramdisk-listing
-          path: |
-            ${{ runner.temp }}/ramdisk-files.txt
-            ${{ runner.temp }}/ramdisk-found.txt
-          if-no-files-found: ignore
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 16f9a21..a8a59f5 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -56,7 +56,9 @@ BOARD_FLASH_BLOCK_SIZE := 262144
+ BOARD_BOOTIMAGE_PARTITION_SIZE := 57671680
+ BOARD_DTBOIMG_PARTITION_SIZE := 8388608
+ BOARD_DTBIMG_PARTITION_SIZE := 8388608
+-BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67633152
++# Hybrid: the recovery partition is 64 MB (TWRP log: /recovery Size: 64MB).
++# The build fails if recovery.img is bigger than this.
++BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864
+ 
+ TARGET_USERIMAGES_USE_EXT4 := true
+ TARGET_USERIMAGES_USE_F2FS := true
+diff --git a/device.mk b/device.mk
+index ddd94e5..5ba6e55 100644
+--- a/device.mk
++++ b/device.mk
+@@ -25,3 +25,7 @@ PRODUCT_PRODUCT_PROPERTIES += \
+ # Screen
+ TARGET_SCREEN_WIDTH := 1080
+ TARGET_SCREEN_HEIGHT := 2340
++
++# Hybrid: marker for ibralyam hybrid TWRP (also set at runtime in init.recovery.exynos9610.rc)
++PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
++    ro.ibralyam.twrp.hybrid=1
+diff --git a/recovery.fstab b/recovery.fstab
+index 223d471..aaec552 100644
+--- a/recovery.fstab
++++ b/recovery.fstab
+@@ -6,3 +6,8 @@
+ /dev/block/platform/13520000.ufs/by-name/userdata   /data   ext4    noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    latemount,wait,check,reservedsize=128M
+ /dev/block/platform/13520000.ufs/by-name/userdata   /data   f2fs    noatime,nosuid,nodev,noauto_da_alloc,discard,journal_checksum,data=ordered,errors=panic    latemount,wait,check,reservedsize=128M
+ /dev/block/platform/13520000.ufs/by-name/misc       /misc   emmc    defaults                                                                                   defaults,first_stage_mount
++
++# Hybrid: legacy TWRP v3 mount point. Installers and AnyKernel3 look for /system_root.
++# Same block device as /system in twrp.flags, so no extra partition is created.
++/dev/block/platform/13520000.ufs/by-name/system     /system_root    ext4    ro,noatime                                                                                 wait
++/dev/block/platform/13520000.ufs/by-name/system     /system_root    erofs   ro                                                                                         wait
+diff --git a/recovery/root/init.recovery.exynos9610.rc b/recovery/root/init.recovery.exynos9610.rc
+index f9b1a8f..32daf01 100644
+--- a/recovery/root/init.recovery.exynos9610.rc
++++ b/recovery/root/init.recovery.exynos9610.rc
+@@ -1,5 +1,12 @@
++on early-init
++    setprop ro.ibralyam.twrp.hybrid 1
++    write /sys/fs/selinux/enforce 0
++
+ on init
+     write /proc/sys/kernel/hung_task_timeout_secs 0
++    symlink /system/bin/twrp_applet /system/bin/xzcat
++    symlink /system/bin/twrp_applet /system/bin/unxz
++    symlink /system/bin/twrp_applet /system/bin/busybox
+ 
+ on late-init
+     setprop service.adb.root 1
+@@ -10,6 +17,8 @@ on fs
+     wait /dev/block/platform/13520000.ufs
+     symlink /dev/block/platform/13520000.ufs /dev/block/bootdevice
+     symlink /dev/block/platform/13520000.ufs/by-name /dev/block/by-name
++    mkdir /sbin 0755 root root
++    symlink /system/bin/sh /sbin/sh
+     start hwservicemanager
+ 
+ service hwservicemanager /system/bin/hwservicemanager
+@@ -20,4 +29,5 @@ service hwservicemanager /system/bin/hwservicemanager
+     seclabel u:r:recovery:s0
+ 
+ on boot
++    mount tmpfs tmpfs /tmp remount rw
+     start health-hal-2-1
