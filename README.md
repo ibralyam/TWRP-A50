@@ -1,7 +1,7 @@
-# Hybrid TWRP for Galaxy A50 (`a50dd`)
+# Hybrid TWRP for Galaxy A50
 
-TWRP 3.7.1_12 for the Samsung Galaxy A50 (SM-A505F, `a50dd`, Exynos 9610).
-It keeps the modern features of the 3.7.1 build and adds what older installers expect from TWRP v3.
+TWRP 3.7.1_12 for the Samsung Galaxy A50 (SM-A505F, a50dd, Exynos 9610).
+It keeps the modern features of the 3.7.1 build. It adds what old installers expect from TWRP v3.
 
 Version string: `3.7.1_12-0-UNOFFICIAL-@ibralyam`
 
@@ -9,16 +9,16 @@ Version string: `3.7.1_12-0-UNOFFICIAL-@ibralyam`
 
 - EROFS support and modern decryption (from the base tree).
 - A `/system_root` mount point for old installers.
-- `xzcat`, `unxz`, `busybox`, and `/sbin/sh` inside recovery.
+- `xzcat`, `unxz`, `busybox` and `/sbin/sh` inside recovery.
 - SELinux permissive and a hybrid marker prop for installers.
-- A static C installer (`twrp_flasher`) that verifies the device and every file before writing.
-- A small flashable zip (about 25 MB).
+- A C installer that checks the device and every file before it writes.
+- A small zip (about 25 MB).
 
-Read [FEATURES.md](FEATURES.md) for the full list and honest limits.
+Read [FEATURES.md](FEATURES.md) for the full list and the honest limits.
 
 ## Quick install
 
-1. Boot into your current TWRP.
+1. Boot to your current TWRP.
 2. Flash `TWRP_hybrid_A50.zip`.
 3. Reboot to recovery.
 
@@ -26,14 +26,14 @@ Full steps: [INSTALL.md](INSTALL.md).
 
 ## Download
 
-Go to the **Releases** page and download `TWRP_hybrid_A50.zip` along with `SHA256SUMS.txt`.
-Do not flash the outer zip from GitHub Actions directly—extract it first to get the real flashable zip inside.
+Go to the Releases page. Download `TWRP_hybrid_A50.zip` and `SHA256SUMS.txt`.
+Do not flash the outer zip from GitHub Actions. It holds the real zip inside.
 
 ## Documents
 
 | File | What it covers |
 | --- | --- |
-| [INSTALL.md](INSTALL.md) | Install, update, and go back |
+| [INSTALL.md](INSTALL.md) | Install, update, go back |
 | [FEATURES.md](FEATURES.md) | Every change, and what is not tested |
 | [BUILD.md](BUILD.md) | Build it yourself with GitHub Actions |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Errors and fixes |
@@ -44,11 +44,16 @@ Do not flash the outer zip from GitHub Actions directly—extract it first to ge
 
 ## Repo layout
 
-```text
-.github/workflows/build-twrp.yml   CI workflow (copy to repo root .github/workflows/ if vendored)
-flasher/twrp_flasher.c             update-binary installer and xzcat, unxz, busybox applets
-patches/0001-hybrid-twrp-a50.patch patch for PeterKnecht93/android_device_samsung_a50 (twrp-12.1)
-tree-patched/                      the four patched files, already merged
-ci/pack.sh                         compress, bake hashes, build flasher, make zip
-tests/run_tests.sh                 flasher self tests (x86 host)
-zip/vbmeta.img                     AVB image (9296 bytes, from the 3.7.1 zip)
+```
+.github/workflows/build-twrp.yml   CI build
+flasher/twrp_flasher.c             installer and applets
+patches/0001-hybrid-twrp-a50.patch device tree patch
+tree-patched/                      patched files, already merged
+ci/pack.sh                         compress, hash, build, zip
+tests/run_tests.sh                 flasher self tests
+zip/vbmeta.img                     AVB image (9296 bytes)
+```
+
+## Help
+
+Telegram: https://t.me/ibralyam
