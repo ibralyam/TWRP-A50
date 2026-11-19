@@ -36,7 +36,7 @@ This is not a renamed copy of another build. The next sections show what is inhe
 | C installer with checks and restore | no | no | yes |
 | Zip under 30 MB with LZMA2 image | no | no | yes |
 
-The "no" marks come from the files I could inspect: the v3 zip, the 3.7.1 zip, the device tree, and your recovery logs.
+The "no" marks come from the files I could inspect. the v3 zip, the 3.7.1 zip, the device tree, and your recovery logs.
 If you find a mistake, open an issue.
 
 ## New in this build
