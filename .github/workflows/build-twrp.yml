@@ -101,6 +101,10 @@ jobs:
           git -C "$DEVICE_DIR" apply --check "$PATCH_PATH"
           git -C "$DEVICE_DIR" apply "$PATCH_PATH"
           install -D -m 755 "$RUNNER_TEMP/twrp_applet" "$DEVICE_DIR/recovery/root/system/bin/twrp_applet"
+          TF="$DEVICE_DIR/recovery/root/system/etc/twrp.flags"
+          test -f "$TF"
+          printf '\n/system_root ext4 /dev/block/platform/13520000.ufs/by-name/system flags=display="System";backup=1;wipeingui\n' >> "$TF"
+          tail -n 3 "$TF"
           git -C "$DEVICE_DIR" status --short
 
       - name: Build recoveryimage (twrp_a50-eng)
@@ -147,6 +151,7 @@ jobs:
           ls -l "$F" "$R/system/etc/twrp.flags" "$R/prop.default" "$R/default.prop" || true
           echo "--- recovery.fstab"; cat "$F"
           if grep -q '/system_root' "$F"; then echo "ok   /system_root in recovery.fstab"; else echo "::error::/system_root not in recovery.fstab"; FAIL=1; fi
+          if grep -E '^/system_root .*wipeingui' "$R/system/etc/twrp.flags" >/dev/null; then echo "ok   /system_root wipeingui in twrp.flags"; else echo "::error::/system_root wipeingui missing in twrp.flags"; FAIL=1; fi
           echo "--- props"
           grep -H -E '^ro.product.device=|^ro.build.product=|ro.ibralyam.twrp.hybrid' "$R/prop.default" "$R/default.prop" || echo "::warning::props not in prop.default or default.prop"
           ( cd "$R" && find . | sort ) > "$RUNNER_TEMP/ramdisk-files.txt"
