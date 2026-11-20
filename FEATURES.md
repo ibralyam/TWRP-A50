@@ -8,7 +8,7 @@ Base: TWRP 3.7.1_12, device tree `PeterKnecht93/android_device_samsung_a50`, bra
 | --- | --- | --- |
 | TWRP base | 3.7.0_9 | 3.7.1_12 |
 | `xzcat`, `unxz`, `busybox` | no | yes |
-| `/sbin/sh` | no | yes |
+| `/sbin/sh` | yes | yes |
 | `/system_root` mount point | yes | yes |
 
 The tools are one static arm64 program with a built-in LZMA decoder.
@@ -20,7 +20,6 @@ It is not full BusyBox. Any other applet name goes to `toybox`.
 | --- | --- | --- |
 | `/system_root` mount (ext4 and EROFS) | no | yes |
 | `xzcat`, `unxz`, `busybox` | no | yes |
-| `/sbin/sh` symlink | no | yes |
 | SELinux permissive at early boot | no | yes |
 | `/tmp` remounted read-write | no | yes |
 | Marker prop `ro.ibralyam.twrp.hybrid=1` | no | yes |
