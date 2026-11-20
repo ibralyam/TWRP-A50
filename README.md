@@ -82,7 +82,7 @@ Not tested:
 - Restore after a failed write on a real phone.
 - The `/tmp` exec flag.
 - The applet with every installer.
-- Phones other than the author's.
+- Phones other than me.
 
 ## Quick install
 
