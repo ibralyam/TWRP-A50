@@ -26,17 +26,16 @@ This is not a renamed copy of another build. The next sections show what is inhe
 | `/system_root` for both ext4 and EROFS | no | no | yes |
 | `xzcat` and `unxz` in recovery | no | no | yes |
 | `busybox` applet in recovery | no | no | yes |
-| `/sbin/sh` | no | no | yes |
+| `/sbin/sh` | yes | yes | yes |
 | SELinux permissive at early boot | no | no | yes |
 | `/tmp` remounted read-write at boot | no | no | yes |
 | Marker prop `ro.ibralyam.twrp.hybrid=1` | no | no | yes |
-| Version name with modder tag | no | no | yes |
 | Build fails above 64 MB | no | no | yes |
 | Ramdisk checks in CI | no | no | yes |
 | C installer with checks and restore | no | no | yes |
 | Zip under 30 MB with LZMA2 image | no | no | yes |
 
-The "no" marks come from the files I could inspect. the v3 zip, the 3.7.1 zip, the device tree, and your recovery logs.
+The "no" marks come from the files I could inspect: the v3 zip, the 3.7.1 zip, the device tree, and your recovery logs.
 If you find a mistake, open an issue.
 
 ## New in this build
@@ -45,7 +44,6 @@ If you find a mistake, open an issue.
 
 - `/system_root` mount point for ext4 and EROFS. AnyKernel3 and MultiDisabler look for it.
 - `xzcat`, `unxz` and `busybox` inside recovery. Installers do not need to carry their own copy.
-- `/sbin/sh` symlink to `/system/bin/sh`.
 - `ro.ibralyam.twrp.hybrid=1`, so an installer can detect this build.
 - SELinux permissive and a read-write `/tmp`.
 
